@@ -81,6 +81,7 @@ function sanitizeRow(row, ownerId) {
     }
   }
   out.contact_date = parseDate(out.date_raw)
+  out.lists = out.list_name ? [out.list_name] : []
   const cf = row.custom_fields
   out.custom_fields = cf && typeof cf === 'object' && !Array.isArray(cf) ? cf : {}
   return out
@@ -108,7 +109,7 @@ function applyFilters(query, sp) {
   if (company) query = query.ilike('company', `%${company}%`)
   if (country) query = query.eq('company_country', country)
   if (industry) query = query.eq('industry', industry)
-  if (listName) query = query.eq('list_name', listName)
+  if (listName) query = query.contains('lists', [listName])
   if (fromDate) query = query.gte('contact_date', fromDate)
   if (toDate) query = query.lte('contact_date', toDate)
   return query
@@ -174,14 +175,19 @@ async function handleRoute(request, { params }) {
       if (auth.error) return auth.error
       const { data, error } = await auth.sb
         .from('contacts')
-        .select('company_country, industry, list_name')
+        .select('company_country, industry, list_name, lists')
         .limit(10000)
       if (error) return json({ error: error.message }, 400)
       const uniq = (key) => Array.from(new Set((data || []).map(r => r[key]).filter(v => v && String(v).trim() !== ''))).sort()
+      const listSet = new Set()
+      ;(data || []).forEach((r) => {
+        if (r.list_name && String(r.list_name).trim() !== '') listSet.add(r.list_name)
+        if (Array.isArray(r.lists)) r.lists.forEach((l) => { if (l && String(l).trim() !== '') listSet.add(l) })
+      })
       return json({
         countries: uniq('company_country'),
         industries: uniq('industry'),
-        lists: uniq('list_name'),
+        lists: Array.from(listSet).sort(),
       })
     }
 
@@ -214,14 +220,9 @@ async function handleRoute(request, { params }) {
       const listName = String(body?.list_name || '').trim()
       if (!ids.length) return json({ error: 'ids required' }, 400)
       if (!listName) return json({ error: 'list_name required' }, 400)
-      let updated = 0
-      for (let i = 0; i < ids.length; i += 500) {
-        const slice = ids.slice(i, i + 500)
-        const { error } = await auth.sb.from('contacts').update({ list_name: listName }).in('id', slice)
-        if (error) return json({ error: error.message, updatedBefore: updated }, 400)
-        updated += slice.length
-      }
-      return json({ updated, list_name: listName })
+      const { data, error } = await auth.sb.rpc('add_to_list', { p_ids: ids, p_list: listName })
+      if (error) return json({ error: error.message }, 400)
+      return json({ updated: data ?? ids.length, list_name: listName })
     }
 
     if (route === '/contacts/export' && method === 'GET') {

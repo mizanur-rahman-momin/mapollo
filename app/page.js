@@ -113,7 +113,9 @@ function rowsToRecords(rows) {
   const records = rows.map((r) => {
     const rec = []
     FIELDS.forEach(([field]) => {
-      rec.push(field === 'date_raw' ? displayDate(r) : (r[field] ?? ''))
+      if (field === 'date_raw') rec.push(displayDate(r))
+      else if (field === 'list_name') rec.push((r.lists && r.lists.length) ? r.lists.join('; ') : (r.list_name ?? ''))
+      else rec.push(r[field] ?? '')
     })
     customKeys.forEach((k) => rec.push((r.custom_fields || {})[k] ?? ''))
     return rec
@@ -544,7 +546,13 @@ function Dashboard({ session, logout }) {
                       <td>{c.company_phone || '\u2014'}</td>
                       <td>{c.employees || '\u2014'}</td>
                       <td>{c.open_jobs || '\u2014'}</td>
-                      <td>{c.list_name ? <Badge variant="secondary">{c.list_name}</Badge> : '\u2014'}</td>
+                      <td>
+                        {(c.lists && c.lists.length) ? (
+                          <div className="flex flex-wrap gap-1">
+                            {c.lists.map((l) => <Badge key={l} variant="secondary">{l}</Badge>)}
+                          </div>
+                        ) : (c.list_name ? <Badge variant="secondary">{c.list_name}</Badge> : '\u2014')}
+                      </td>
                       <td>{displayDate(c) || '\u2014'}</td>
                       <td>
                         <div className="flex items-center gap-2">
