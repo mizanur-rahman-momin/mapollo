@@ -185,6 +185,45 @@ async function handleRoute(request, { params }) {
       })
     }
 
+    if (route === '/contacts/ids' && method === 'GET') {
+      const auth = await requireUser(request)
+      if (auth.error) return auth.error
+      const sp = new URL(request.url).searchParams
+      const all = []
+      const batch = 1000
+      let from = 0
+      const MAX = 50000
+      while (from < MAX) {
+        let q = auth.sb.from('contacts').select('id')
+          .order('created_at', { ascending: false }).order('id', { ascending: false })
+        q = applyFilters(q, sp)
+        const { data, error } = await q.range(from, from + batch - 1)
+        if (error) return json({ error: error.message }, 400)
+        all.push(...(data || []).map((r) => r.id))
+        if (!data || data.length < batch) break
+        from += batch
+      }
+      return json({ ids: all, count: all.length })
+    }
+
+    if (route === '/contacts/assign-list' && method === 'POST') {
+      const auth = await requireUser(request)
+      if (auth.error) return auth.error
+      const body = await request.json()
+      const ids = Array.isArray(body?.ids) ? body.ids : []
+      const listName = String(body?.list_name || '').trim()
+      if (!ids.length) return json({ error: 'ids required' }, 400)
+      if (!listName) return json({ error: 'list_name required' }, 400)
+      let updated = 0
+      for (let i = 0; i < ids.length; i += 500) {
+        const slice = ids.slice(i, i + 500)
+        const { error } = await auth.sb.from('contacts').update({ list_name: listName }).in('id', slice)
+        if (error) return json({ error: error.message, updatedBefore: updated }, 400)
+        updated += slice.length
+      }
+      return json({ updated, list_name: listName })
+    }
+
     if (route === '/contacts/export' && method === 'GET') {
       const auth = await requireUser(request)
       if (auth.error) return auth.error

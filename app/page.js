@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
@@ -22,6 +23,7 @@ import {
 import {
   Upload, Download, Search, Filter, Trash2, Plus, LogOut, Users, Loader2,
   ChevronLeft, ChevronRight, Linkedin, Globe, FileSpreadsheet, CheckCircle2,
+  ListPlus, X, FileDown,
 } from 'lucide-react'
 
 // ---------- Field definitions (internal_key, CSV header label) ----------
@@ -52,7 +54,6 @@ const HEADER_LABELS = FIELDS.map((f) => f[1])
 const normalize = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 const NORM_TO_FIELD = {}
 FIELDS.forEach(([key, label]) => { NORM_TO_FIELD[normalize(label)] = key })
-// a couple of friendly aliases
 NORM_TO_FIELD[normalize('Phone')] = 'company_phone'
 NORM_TO_FIELD[normalize('Person Linkedin')] = 'person_linkedin_url'
 NORM_TO_FIELD[normalize('Linkedin Url')] = 'person_linkedin_url'
@@ -62,7 +63,11 @@ NORM_TO_FIELD[normalize('State')] = 'company_state'
 
 const SESSION_KEY = 'mapollo_session'
 
-// format a stored contact date to DDMMYYYY for display
+const SAMPLE_ROWS = [
+  ['Jane', 'Doe', 'Founder & CEO', 'jane@acme.com', 'https://linkedin.com/in/janedoe', 'New York, USA', 'Acme Inc', 'https://linkedin.com/company/acme', '50-100', 'Software', '123 Market St', 'Market St', 'New York', 'NY', 'United States', '+1 555 100 2000', 'https://acme.com', '3', '01012026', 'Q1 Prospects'],
+  ['John', 'Smith', 'Head of Sales', 'john@globex.com', 'https://linkedin.com/in/johnsmith', 'London, UK', 'Globex', 'https://linkedin.com/company/globex', '200-500', 'Marketing', '9 King Rd', 'King Rd', 'London', 'England', 'United Kingdom', '+44 20 7946 0000', 'https://globex.com', '5', '20122026', 'Q1 Prospects'],
+]
+
 function displayDate(r) {
   if (r.date_raw) return r.date_raw
   if (r.contact_date) {
@@ -90,7 +95,12 @@ function csvEscape(v) {
   return s
 }
 
-// Build header + records array (in official order + discovered custom fields)
+function downloadSampleFile() {
+  const lines = [HEADER_LABELS.map(csvEscape).join(',')]
+  SAMPLE_ROWS.forEach((r) => lines.push(r.map(csvEscape).join(',')))
+  download('mapollo_sample.csv', lines.join('\n'), 'text/csv;charset=utf-8;')
+}
+
 function rowsToRecords(rows) {
   const customKeys = []
   const seen = new Set()
@@ -180,7 +190,6 @@ function AuthScreen({ onAuthed }) {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
-      {/* Brand panel */}
       <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-700 p-12 text-white">
         <div className="flex items-center gap-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
@@ -195,7 +204,7 @@ function AuthScreen({ onAuthed }) {
             then export exactly what you need.
           </p>
           <div className="flex flex-wrap gap-2 pt-2">
-            {['CSV & Excel import', 'Smart filters', 'One-click export', 'Custom fields'].map((t) => (
+            {['CSV & Excel import', 'Smart filters', 'Save to lists', 'One-click export'].map((t) => (
               <span key={t} className="rounded-full bg-white/15 px-3 py-1 text-sm">{t}</span>
             ))}
           </div>
@@ -203,7 +212,6 @@ function AuthScreen({ onAuthed }) {
         <p className="text-sm text-white/60">A lightweight Apollo alternative.</p>
       </div>
 
-      {/* Form panel */}
       <div className="flex items-center justify-center p-6">
         <Card className="w-full max-w-md p-8">
           <div className="lg:hidden mb-6 flex items-center gap-2">
@@ -256,6 +264,8 @@ function Dashboard({ session, logout }) {
   const [facets, setFacets] = useState({ countries: [], industries: [], lists: [] })
   const [importOpen, setImportOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
 
   const api = useCallback(async (path, opts = {}) => {
     const { method = 'GET', body } = opts
@@ -312,13 +322,59 @@ function Dashboard({ session, logout }) {
     } catch {}
   }, [api])
 
-  useEffect(() => { fetchContacts() }, [page, pageSize, reloadToken]) // eslint-disable-line
+  useEffect(() => { setSelected(new Set()); fetchContacts() }, [page, pageSize, reloadToken]) // eslint-disable-line
   useEffect(() => { fetchFacets() }, []) // eslint-disable-line
 
   const applyFilters = () => { setPage(1); setReloadToken((t) => t + 1) }
   const clearFilters = () => { setFilters(EMPTY_FILTERS); setPage(1); setReloadToken((t) => t + 1) }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  // ---------- selection ----------
+  const pageIds = useMemo(() => contacts.map((c) => c.id), [contacts])
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+  const somePageSelected = pageIds.some((id) => selected.has(id))
+
+  const toggleRow = (id) => setSelected((prev) => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const togglePage = () => setSelected((prev) => {
+    const next = new Set(prev)
+    if (allPageSelected) pageIds.forEach((id) => next.delete(id))
+    else pageIds.forEach((id) => next.add(id))
+    return next
+  })
+  const clearSelection = () => setSelected(new Set())
+
+  const selectAllFiltered = async () => {
+    const t = toast.loading('Selecting all filtered contacts...')
+    try {
+      const data = await api(`/contacts/ids?${buildQuery(false)}`)
+      setSelected(new Set(data.ids || []))
+      toast.dismiss(t)
+      toast.success(`Selected ${data.count} contacts`)
+    } catch (err) {
+      toast.dismiss(t)
+      if (err.message !== 'Unauthorized') toast.error(err.message)
+    }
+  }
+
+  const saveToList = async (listName) => {
+    const ids = Array.from(selected)
+    if (!ids.length || !listName.trim()) return
+    try {
+      const res = await api('/contacts/assign-list', { method: 'POST', body: { ids, list_name: listName.trim() } })
+      setListOpen(false)
+      clearSelection()
+      toast.success(`Saved ${res.updated} contacts to "${res.list_name}"`)
+      fetchFacets()
+      setReloadToken((tk) => tk + 1)
+    } catch (err) {
+      if (err.message !== 'Unauthorized') toast.error(err.message)
+    }
+  }
 
   const doExport = async (format) => {
     const t = toast.loading('Preparing export...')
@@ -354,9 +410,9 @@ function Dashboard({ session, logout }) {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="h-screen flex flex-col bg-muted/30 overflow-hidden">
       {/* Top bar */}
-      <header className="sticky top-0 z-20 border-b bg-background">
+      <header className="shrink-0 border-b bg-background">
         <div className="flex h-14 items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
@@ -374,16 +430,16 @@ function Dashboard({ session, logout }) {
         </div>
       </header>
 
-      <div className="flex">
+      <div className="flex flex-1 min-h-0">
         {/* Filters sidebar */}
-        <aside className="hidden lg:block w-72 shrink-0 border-r bg-background min-h-[calc(100vh-3.5rem)] p-4">
+        <aside className="hidden lg:block w-72 shrink-0 border-r bg-background overflow-y-auto p-4">
           <FilterPanel filters={filters} setFilters={setFilters} facets={facets} onApply={applyFilters} onClear={clearFilters} />
         </aside>
 
         {/* Main */}
-        <main className="flex-1 min-w-0 p-4 lg:p-6 space-y-4">
+        <main className="flex-1 min-w-0 flex flex-col p-4 lg:p-6 gap-4">
           {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <div className="relative flex-1 min-w-[220px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -395,7 +451,8 @@ function Dashboard({ session, logout }) {
               />
             </div>
             <Button variant="outline" onClick={applyFilters}><Filter className="h-4 w-4 mr-1" /> Apply</Button>
-            <Button onClick={() => setAddOpen(true)} variant="outline"><Plus className="h-4 w-4 mr-1" /> Add</Button>
+            <Button variant="outline" onClick={() => setAddOpen(true)}><Plus className="h-4 w-4 mr-1" /> Add</Button>
+            <Button variant="outline" onClick={downloadSampleFile}><FileDown className="h-4 w-4 mr-1" /> Sample</Button>
             <Button onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-1" /> Import</Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -409,18 +466,37 @@ function Dashboard({ session, logout }) {
           </div>
 
           {/* Mobile filters */}
-          <div className="lg:hidden">
+          <div className="lg:hidden shrink-0">
             <Card className="p-4">
               <FilterPanel filters={filters} setFilters={setFilters} facets={facets} onApply={applyFilters} onClear={clearFilters} />
             </Card>
           </div>
 
-          {/* Table */}
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+          {/* Selection bar */}
+          {selected.size > 0 && (
+            <div className="shrink-0 flex flex-wrap items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm">
+              <span className="font-semibold text-indigo-700">{selected.size.toLocaleString()} selected</span>
+              {somePageSelected && total > pageSize && selected.size < total && (
+                <button className="text-indigo-600 hover:underline font-medium" onClick={selectAllFiltered}>
+                  Select all {total.toLocaleString()} filtered
+                </button>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <Button size="sm" onClick={() => setListOpen(true)}><ListPlus className="h-4 w-4 mr-1" /> Save to list</Button>
+                <Button size="sm" variant="ghost" onClick={clearSelection}><X className="h-4 w-4 mr-1" /> Clear</Button>
+              </div>
+            </div>
+          )}
+
+          {/* Table (scrollable) */}
+          <Card className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 overflow-auto">
               <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-muted-foreground">
+                <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                   <tr className="[&>th]:px-3 [&>th]:py-2.5 [&>th]:text-left [&>th]:font-medium [&>th]:whitespace-nowrap">
+                    <th className="w-10">
+                      <Checkbox checked={allPageSelected} onCheckedChange={togglePage} aria-label="Select page" />
+                    </th>
                     <th>Name</th>
                     <th>Title</th>
                     <th>Email</th>
@@ -439,11 +515,11 @@ function Dashboard({ session, logout }) {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={14} className="px-3 py-16 text-center text-muted-foreground">
+                    <tr><td colSpan={15} className="px-3 py-16 text-center text-muted-foreground">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                     </td></tr>
                   ) : contacts.length === 0 ? (
-                    <tr><td colSpan={14} className="px-3 py-16 text-center">
+                    <tr><td colSpan={15} className="px-3 py-16 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <Users className="h-8 w-8 opacity-40" />
                         <p className="font-medium">No contacts found</p>
@@ -452,7 +528,10 @@ function Dashboard({ session, logout }) {
                       </div>
                     </td></tr>
                   ) : contacts.map((c) => (
-                    <tr key={c.id} className="border-t hover:bg-muted/40 [&>td]:px-3 [&>td]:py-2.5 [&>td]:whitespace-nowrap">
+                    <tr key={c.id} className={`border-t hover:bg-muted/40 [&>td]:px-3 [&>td]:py-2.5 [&>td]:whitespace-nowrap ${selected.has(c.id) ? 'bg-indigo-50/60' : ''}`}>
+                      <td>
+                        <Checkbox checked={selected.has(c.id)} onCheckedChange={() => toggleRow(c.id)} aria-label="Select row" />
+                      </td>
                       <td className="font-medium">
                         {[c.first_name, c.last_name].filter(Boolean).join(' ') || '\u2014'}
                       </td>
@@ -489,8 +568,8 @@ function Dashboard({ session, logout }) {
             </div>
           </Card>
 
-          {/* Pagination */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Pagination (always visible) */}
+          <div className="shrink-0 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span>Rows per page</span>
               <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1) }}>
@@ -517,6 +596,7 @@ function Dashboard({ session, logout }) {
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} api={api} onImported={onImported} />
       <AddContactDialog open={addOpen} onOpenChange={setAddOpen} api={api} onAdded={() => { setAddOpen(false); toast.success('Contact added'); setReloadToken((t) => t + 1); fetchFacets() }} />
+      <SaveToListDialog open={listOpen} onOpenChange={setListOpen} count={selected.size} existingLists={facets.lists} onSave={saveToList} />
     </div>
   )
 }
@@ -573,9 +653,48 @@ function FacetSelect({ label, value, onChange, options }) {
   )
 }
 
+// ============================ SAVE TO LIST DIALOG ============================
+function SaveToListDialog({ open, onOpenChange, count, existingLists, onSave }) {
+  const [name, setName] = useState('')
+  useEffect(() => { if (!open) setName('') }, [open])
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><ListPlus className="h-5 w-5" /> Save to list</DialogTitle>
+          <DialogDescription>Assign {count.toLocaleString()} selected contact{count === 1 ? '' : 's'} to a list. You can filter by this list later.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">List name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Q1 Prospects" autoFocus onKeyDown={(e) => e.key === 'Enter' && onSave(name)} />
+          </div>
+          {existingLists.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Or pick an existing list</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {existingLists.map((l) => (
+                  <button key={l} onClick={() => setName(l)}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition hover:bg-muted ${name === l ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : ''}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onSave(name)} disabled={!name.trim()}>Save to "{name.trim() || '...'}"</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ============================ IMPORT DIALOG ============================
 function ImportDialog({ open, onOpenChange, api, onImported }) {
-  const [step, setStep] = useState('upload') // upload | map | importing
+  const [step, setStep] = useState('upload')
   const [fileName, setFileName] = useState('')
   const [headers, setHeaders] = useState([])
   const [rows, setRows] = useState([])
@@ -584,18 +703,7 @@ function ImportDialog({ open, onOpenChange, api, onImported }) {
   const fileRef = useRef(null)
 
   const reset = () => { setStep('upload'); setFileName(''); setHeaders([]); setRows([]); setMapping({}); setProgress(0) }
-
   useEffect(() => { if (!open) reset() }, [open])
-
-  const downloadSample = () => {
-    const sample = [
-      ['Jane', 'Doe', 'Founder & CEO', 'jane@acme.com', 'https://linkedin.com/in/janedoe', 'New York, USA', 'Acme Inc', 'https://linkedin.com/company/acme', '50-100', 'Software', '123 Market St', 'Market St', 'New York', 'NY', 'United States', '+1 555 100 2000', 'https://acme.com', '3', '01012026', 'Q1 Prospects'],
-      ['John', 'Smith', 'Head of Sales', 'john@globex.com', 'https://linkedin.com/in/johnsmith', 'London, UK', 'Globex', 'https://linkedin.com/company/globex', '200-500', 'Marketing', '9 King Rd', 'King Rd', 'London', 'England', 'United Kingdom', '+44 20 7946 0000', 'https://globex.com', '5', '20122026', 'Q1 Prospects'],
-    ]
-    const lines = [HEADER_LABELS.map(csvEscape).join(',')]
-    sample.forEach((r) => lines.push(r.map(csvEscape).join(',')))
-    download('mapollo_sample.csv', lines.join('\n'), 'text/csv;charset=utf-8;')
-  }
 
   const handleFile = (file) => {
     if (!file) return
@@ -708,7 +816,7 @@ function ImportDialog({ open, onOpenChange, api, onImported }) {
                 <p className="font-medium">Need the right format?</p>
                 <p className="text-muted-foreground text-xs">Download a sample file with all the correct headers.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={downloadSample}><Download className="h-4 w-4 mr-1" /> Sample CSV</Button>
+              <Button variant="outline" size="sm" onClick={downloadSampleFile}><Download className="h-4 w-4 mr-1" /> Sample CSV</Button>
             </div>
           </div>
         )}
