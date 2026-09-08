@@ -101,3 +101,42 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "mapollo - single-user leads/contacts manager. Supabase DB + Supabase Auth (signup/login). CSV/Excel import with header auto-match, manual mapping, preview, custom fields. Filters (title, location, country, industry, list, date range DDMMYYYY). Pagination 50/100. Export filtered results as CSV/Excel. Sample file download."
+
+frontend:
+  - task: "Login/Signup screen renders without React hydration error"
+    implemented: true
+    working: true
+    file: "app/page.js, app/layout.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "user"
+          comment: "User reported: 'A tree hydrated but some attributes of the server rendered HTML didnt match the client properties' React hydration console error."
+        - working: true
+          agent: "testing"
+          comment: "Verified on live URL. mapollo auth screen renders (logo, email, password, submit). NO React hydration error. Sign in/Sign up toggle works. 0 console errors, 0 warnings, 0 page errors. Fix confirmed working."
+        - working: true
+          agent: "testing"
+          comment: "VERIFIED: Fix successful. Tested at https://lead-vault-41.preview.emergentagent.com/. All tests passed: (1) Page loads correctly, (2) mapollo login/signup screen renders with all elements (branding, email input, password input, submit button), (3) NO React hydration errors detected in console, (4) Toggle between Sign in/Sign up modes works perfectly with heading and button text changing correctly, (5) Console is clean with 0 errors, 0 warnings, only 1 info message (React DevTools). The suppressHydrationWarning fix has completely resolved the hydration error."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 2
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: "Please verify ONLY the hydration/console-error fix. Load the app root URL, confirm the mapollo login/signup screen renders correctly, toggle between Sign in and Sign up, and confirm the browser console shows NO React hydration error (the 'tree hydrated but some attributes...didn't match' message) and no other blocking console errors. Do NOT attempt a full data flow yet - the Supabase 'contacts' table is pending a one-time SQL setup by the user, so backend data operations are expected to be unavailable. Scope is the auth screen render + console cleanliness only."
+    - agent: "testing"
+      message: "✅ HYDRATION BUG FIX VERIFIED SUCCESSFUL. Comprehensive testing completed on the auth screen at https://lead-vault-41.preview.emergentagent.com/. Results: (1) Page loads without issues, (2) All UI elements render correctly (mapollo branding, Sign in/Sign up headings, email/password inputs, submit button), (3) NO React hydration errors detected in browser console, (4) Toggle between Sign in and Sign up modes works flawlessly with proper heading and button text changes, (5) Console is completely clean - 0 errors, 0 warnings, only 1 informational React DevTools message. The suppressHydrationWarning attributes added to <html> and <body> in app/layout.js have completely resolved the reported hydration error. Task marked as working=true, needs_retesting=false, stuck_count=0. No further action needed for this bug fix."
